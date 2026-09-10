@@ -29,7 +29,8 @@ def verify(payload):
         check(descriptor.findtext("id") == MODULE, "Wrong module identity")
         check(descriptor.findtext("version") == VERSION, "Wrong descriptor version")
         if API_NAME:
-            apis = [n for n in names if n.startswith("lib/" + MODULE + "-api-") and n.endswith(".jar")]
+            apis = [n for n in names if n.startswith("lib/" + MODULE + "-api-")
+                    and not n.startswith("lib/" + MODULE + "-api-reporting-") and n.endswith(".jar")]
             check(apis == [API_NAME], "Expected exactly one API JAR at the release version")
             with ZipFile(BytesIO(archive.read(API_NAME))) as api:
                 implementation = api.read(CLASS)
@@ -39,7 +40,7 @@ def verify(payload):
             check(marker in implementation, "Missing compiled protection: " + marker.decode())
 
 
-def fixture(module=MODULE, version=VERSION, markers=None, api_name=API_NAME):
+def fixture(module=MODULE, version=VERSION, markers=None, api_name=API_NAME, extra_api=False):
     implementation = b" ".join(MARKERS if markers is None else markers)
     output = BytesIO()
     with ZipFile(output, "w") as archive:
@@ -49,6 +50,10 @@ def fixture(module=MODULE, version=VERSION, markers=None, api_name=API_NAME):
             with ZipFile(inner, "w") as api:
                 api.writestr(CLASS, implementation)
             archive.writestr(api_name, inner.getvalue())
+            # The real OMOD also ships the optional reporting API; it is not a second main API.
+            archive.writestr(f"lib/{MODULE}-api-reporting-{VERSION}.jar", b"synthetic reporting API")
+            if extra_api:
+                archive.writestr(f"lib/{MODULE}-api-0.0.0.jar", inner.getvalue())
         else:
             archive.writestr(CLASS, implementation)
     return output.getvalue()
@@ -60,6 +65,7 @@ def self_test():
     invalid.extend(fixture(markers=MARKERS[:i] + MARKERS[i + 1:]) for i in range(len(MARKERS)))
     if API_NAME:
         invalid.append(fixture(api_name=f"lib/{MODULE}-api-0.0.0.jar"))
+        invalid.append(fixture(extra_api=True))
     for payload in invalid:
         try:
             verify(payload)
