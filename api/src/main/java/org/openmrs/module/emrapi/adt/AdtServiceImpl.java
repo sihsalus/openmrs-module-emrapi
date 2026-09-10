@@ -153,6 +153,7 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 	}
 	
 	@Override
+	@Transactional
 	public void closeInactiveVisits() {
 		Collection<Location> possibleLocations = getPossibleLocationsToCloseVisit();
 		List<Visit> openVisits = visitService.getVisits(null, null, possibleLocations, null, null, null, null, null, null,
@@ -162,8 +163,12 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 				try {
 					closeAndSaveVisit(visit);
 				}
-				catch (Exception ex) {
-					log.warn("Failed to close inactive visit " + visit, ex);
+				catch (RuntimeException ex) {
+					// Save handlers may flush dirty visits and related queues before
+					// rejecting them. Propagate through the outer transaction proxy;
+					// catching and continuing would commit those invalid changes.
+					log.warn("Failed to close inactive visit; rolling back closure batch: " + visit, ex);
+					throw ex;
 				}
 			}
 		}
