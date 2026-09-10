@@ -1,26 +1,58 @@
-name: Build with Maven
+name: SIHSalus module CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [sihsalus-2.8]
   pull_request:
-    branches: [ master ]
+    branches: [sihsalus-2.8]
   workflow_dispatch:
+  workflow_call:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
 
 jobs:
-  build:
-    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-backend-module.yml@main
-    secrets:
-      MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
-      MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
-
-  owasp-dependency-check:
-    if: ${{ github.event_name != 'pull_request' }}
-    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@main
-    secrets:
-      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-      BOT_GH_TOKEN: ${{ secrets.OMRS_BOT_GH_TOKEN }}
+  test:
+    name: Java 21 / Core ${{ matrix.core }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        core: ['2.8.0', '2.8.9']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Test release verifier
+        run: python3 tools/verify_omod.py --self-test
+      - name: Build and run the full reactor tests
+        env:
+          CORE_VERSION: ${{ matrix.core }}
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          -Dformatter.skip=true -Dspotless.skip=true -Dmaven.javadoc.skip=true
+          -DopenmrsPlatformVersion="$CORE_VERSION" clean install
+      - name: Verify the packaged OMOD
+        run: python3 tools/verify_omod.py omod/target/emrapi-*.omod
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: surefire-core-${{ matrix.core }}
+          path: '**/target/surefire-reports/TEST-*.xml'
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Upload the tested Core 2.8.9 binary
+        if: matrix.core == '2.8.9'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: module-omod
+          path: omod/target/emrapi-*.omod
+          if-no-files-found: error
+          retention-days: 30

@@ -1,4 +1,17 @@
-[![Build Status](https://travis-ci.org/openmrs/openmrs-module-emrapi.svg?branch=master)](https://travis-ci.org/openmrs/openmrs-module-emrapi)
+[![SIHSalus CI](https://github.com/sihsalus/openmrs-module-emrapi/actions/workflows/build.yml/badge.svg?branch=sihsalus-2.8)](https://github.com/sihsalus/openmrs-module-emrapi/actions/workflows/build.yml)
+
+## SIHSalus maintenance branch
+
+This repository owns the SIHSalus source changes, regression tests and OMOD releases.
+See [SIHSalus release scope and safety requirements](SIHSALUS-RELEASE.md) before use.
+The upstream documentation below is retained for reference.
+
+Build with Java 21: `mvn -B -ntp -Dformatter.skip=true -Dspotless.skip=true -Dmaven.javadoc.skip=true clean install`.
+The manual **SIHSalus release** workflow rebuilds and tests both Core baselines,
+then publishes the verified Core 2.8.9 OMOD as an immutable prerelease. Pass the
+exact version already committed in `pom.xml`; it never changes source versions.
+Consumers must pin the release version and OMOD SHA-256, not a moving branch,
+`latest` URL, SNAPSHOT dependency or expiring CI artifact.
 
 openmrs-module-emrapi
 ====================
