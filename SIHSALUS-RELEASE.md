@@ -1,44 +1,40 @@
-# SIHSalus EMR API 3.5.1-sihsalus.1
+# SIHSalus EMR API 3.5.1-sihsalus.2
 
-**Containment only. Do not reactivate automatic visit closure based on this release.**
-This is not an official OpenMRS 3.5.1 release or a complete fix for closure timestamps.
+This candidate adds an opt-in administrative timestamp for automatic closure of
+inactive visits. Queue entries that start after the last encounter can then be
+ended through the normal OpenMRS visit save handler. The earlier
+`3.5.1-sihsalus.1` release protected transaction rollback but still calculated an
+incompatible historical stop time.
 
-## Source and scope
+## Scope
 
-Upstream base: `openmrs/openmrs-module-emrapi@a06a2efd651435609a1c4b39ef35501b3401ff5d`
-(upstream 3.5.0-SNAPSHOT source, previously pinned in SIHSalus).
+- Set `emrapi.useCurrentTimeForAutomaticVisitClosure=true` to use server time,
+  at second precision, when the automatic administrative closure executes.
+- The default remains `false`. Installing this version does not activate a task.
+- Manual closure retains its existing last-encounter/start policy.
+- Inactivity thresholds, visit-location selection and inpatient protections are
+  preserved. Future activity is excluded from inactivity calculations.
+- Original encounters, queue start times and previously-ended entries are not
+  rewritten. Invalid visits/queues still roll back the complete batch.
+- No runtime dependency on Queue or external scheduling scripts is added.
 
-The source change previously proposed in [distribution PR #305](https://github.com/sihsalus/sihsalus/pull/305)
-now belongs in this module repository:
+See [timestamp policy, verification and activation](docs/automatic-visit-closure.md).
+This does not fix historical corruption or concurrent changes by a clinician
+while the existing task is evaluating a visit.
 
-- Make `closeInactiveVisits` transactional.
-- Propagate runtime save/validation failures through the outer Spring proxy.
-- Roll back the whole batch on the first failure, including earlier visit/queue writes.
+## Verification and activation
 
-This is deliberately not per-visit isolation: one incompatible visit still aborts
-the batch. It does not change guessed stop dates, Queue validation, historical
-clinical rows or scheduler configuration. Callers must not swallow the failure
-inside their own transaction and then commit.
+The release workflow must pass the full reactor and the `queue-compatibility`
+profile on Java 21 with Core 2.8.0 and 2.8.9. Compatibility tests use Queue's
+pinned deployed source, actual OpenMRS services, its validators and save handler,
+and Hibernate/H2 with synthetic fixtures. The published OMOD is the tested Core
+2.8.9 binary, with checksum and GitHub build attestation.
 
-## Evidence and remaining acceptance
-
-The regression uses the real Spring annotation transaction interceptor, H2 and a
-VisitService double that writes synthetic visit/queue rows before rejecting an
-end date. It covers end before/equal to start, earlier-write rollback, stopping
-before later visits, valid batches and empty batches. These tests do not replace
-real OpenMRS + Queue/Hibernate integration or clinical acceptance.
-
-CI must pass the complete reactor on Java 21 with Core 2.8.0 and Core 2.8.9.
-The published OMOD is built and tested against Core 2.8.9. Its descriptor, nested
-API version and compiled containment markers are checked before release.
-The workflow publishes a SHA-256 checksum and GitHub build attestation.
-This immutable prerelease is for controlled validation, not automatic promotion.
-
-Keep the affected scheduler task paused. A complete timestamp policy, actual
-OpenMRS + Queue integration tests and synthetic DEV/QLTY acceptance remain
-required before separately authorized activation. No production data belongs
-in this repository or its tests.
+Clinical timestamp-policy acceptance, synthetic DEV/QLTY acceptance with the
+exact release and a current backup remain prerequisites for hospital activation.
+Keep the existing task paused until those steps are complete. Publishing a
+prerelease does not deploy it or activate a scheduler task. Production records
+must never be copied into this repository or test fixtures.
 
 Verify a downloaded OMOD with `gh attestation verify FILE --repo
 sihsalus/openmrs-module-emrapi`, and compare SHA-256 with the distribution pin.
-Publishing this release does not deploy anything or reactivate any task.

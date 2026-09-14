@@ -198,6 +198,9 @@ public class EmrApiConstants {
 	
 	public static final String GP_INPATIENT_VISIT_EXPIRE_HOURS = "emrapi.inpatientVisitExpireHours";
 	
+	public static final String GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE =
+	        "emrapi.useCurrentTimeForAutomaticVisitClosure";
+
 	/*public static final String CONCEPT_CODE_DISPOSITION = "Disposition";
 	
 	public static final String CONCEPTDISPOSITION_ANSWER_ADMIT = "Admit";

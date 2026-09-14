@@ -183,6 +183,21 @@ public class EmrApiProperties {
 		return StringUtils.hasText(gpVal) ? NumberUtils.toInt(gpVal) : null;
 	}
 	
+	/**
+	 * Opt-in administrative closure timestamp. Manual closure keeps its existing policy.
+	 */
+	public boolean useCurrentTimeForAutomaticVisitClosure() {
+		String value = getGlobalProperty(EmrApiConstants.GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE, false);
+		if (!StringUtils.hasText(value) || "false".equalsIgnoreCase(value.trim())) {
+			return false;
+		}
+		if ("true".equalsIgnoreCase(value.trim())) {
+			return true;
+		}
+		throw new IllegalArgumentException(EmrApiConstants.GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE
+		        + " must be true or false");
+	}
+
 	public VisitType getAtFacilityVisitType() {
 		return getEmrApiMetadataByCode(VisitType.class, EmrApiConstants.GP_AT_FACILITY_VISIT_TYPE);
 	}

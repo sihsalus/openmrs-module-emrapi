@@ -155,13 +155,25 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 	@Override
 	@Transactional
 	public void closeInactiveVisits() {
+		boolean useCurrentTime = emrApiProperties.useCurrentTimeForAutomaticVisitClosure();
 		Collection<Location> possibleLocations = getPossibleLocationsToCloseVisit();
 		List<Visit> openVisits = visitService.getVisits(null, null, possibleLocations, null, null, null, null, null, null,
 		    false, false);
 		for (Visit visit : openVisits) {
 			if (shouldBeClosed(visit)) {
 				try {
-					closeAndSaveVisit(visit);
+					if (useCurrentTime) {
+						// This is the time the automatic administrative closure happens,
+						// not an inferred clinical encounter or discharge time. Queue
+						// entries can begin after the last encounter; backdating the visit
+						// to that encounter would reject their associated closure.
+						// Match DATETIME precision so validation also rejects a queue
+						// created in this same second instead of persisting zero duration.
+						visit.setStopDatetime(new DateTime().withMillisOfSecond(0).toDate());
+						visitService.saveVisit(visit);
+					} else {
+						closeAndSaveVisit(visit);
+					}
 				}
 				catch (RuntimeException ex) {
 					// Save handlers may flush dirty visits and related queues before
@@ -191,7 +203,10 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 		
 		Date now = new Date();
 		Date lastActivity = getLastActivityDate(visit);
-		long hoursInactive = TimeUnit.HOURS.convert(Math.abs(lastActivity.getTime() - now.getTime()), TimeUnit.MILLISECONDS);
+		if (lastActivity.after(now)) {
+			return false;
+		}
+		long hoursInactive = TimeUnit.HOURS.convert(now.getTime() - lastActivity.getTime(), TimeUnit.MILLISECONDS);
 		
 		boolean inpatient = (visitDomainWrapper.isAdmitted() || visitDomainWrapper.isAwaitingAdmission());
 		if (!inpatient) {

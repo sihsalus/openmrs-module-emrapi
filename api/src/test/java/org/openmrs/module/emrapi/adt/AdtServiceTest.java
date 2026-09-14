@@ -682,6 +682,55 @@ public class AdtServiceTest {
 	}
 	
 	@Test
+	public void shouldUseAdministrativeClosureTimeOnlyForInactiveVisitsWhenEnabled() {
+		when(emrApiProperties.useCurrentTimeForAutomaticVisitClosure()).thenReturn(true);
+		Visit stale = new Visit(1);
+		stale.setStartDatetime(DateUtils.addHours(new Date(), -48));
+		Visit recent = new Visit(2);
+		recent.setStartDatetime(DateUtils.addHours(new Date(), -48));
+		Encounter recentEncounter = new Encounter();
+		recentEncounter.setEncounterType(checkInEncounterType);
+		recentEncounter.setEncounterDatetime(DateUtils.addHours(new Date(), -1));
+		recent.addEncounter(recentEncounter);
+		when(mockVisitService.getVisits(isNull(), isNull(), anyCollection(), isNull(), isNull(), isNull(), isNull(),
+		    isNull(), isNull(), eq(false), eq(false))).thenReturn(Arrays.asList(stale, recent));
+		Date before = new DateTime().withMillisOfSecond(0).toDate();
+		service.closeInactiveVisits();
+		Date after = new Date();
+		assertFalse(stale.getStopDatetime().before(before));
+		assertFalse(stale.getStopDatetime().after(after));
+		assertNull(recent.getStopDatetime());
+		verify(mockVisitService, never()).saveVisit(recent);
+	}
+
+	@Test
+	public void shouldNotChangeManualClosureTimeWhenAdministrativeClosureTimeIsEnabled() {
+		when(emrApiProperties.useCurrentTimeForAutomaticVisitClosure()).thenReturn(true);
+		Visit visit = new Visit(1);
+		visit.setStartDatetime(DateUtils.addHours(new Date(), -48));
+		service.closeAndSaveVisit(visit);
+		assertEquals(visit.getStartDatetime(), visit.getStopDatetime());
+	}
+
+	@Test
+	public void shouldNotTreatAFutureVisitStartAsInactivity() {
+		Visit visit = new Visit(1);
+		visit.setStartDatetime(DateUtils.addHours(new Date(), 48));
+		assertFalse(service.shouldBeClosed(visit));
+	}
+
+	@Test
+	public void shouldNotTreatAFutureEncounterAsInactivity() {
+		Visit visit = new Visit(1);
+		visit.setStartDatetime(DateUtils.addHours(new Date(), -48));
+		Encounter encounter = new Encounter();
+		encounter.setEncounterType(checkInEncounterType);
+		encounter.setEncounterDatetime(DateUtils.addHours(new Date(), 48));
+		visit.addEncounter(encounter);
+		assertFalse(service.shouldBeClosed(visit));
+	}
+
+	@Test
 	public void shouldCloseVisitWithAdmissionAndDischargeEncounters() {
 		Visit visit = new Visit(1);
 		visit.setStartDatetime(DateUtils.addHours(new Date(), -14));

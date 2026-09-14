@@ -19,6 +19,9 @@ import org.openmrs.api.ConceptService;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
@@ -80,6 +83,24 @@ public class EmrApiPropertiesTest {
 		assertNull(emrApiProperties.getInpatientVisitExpireHours());
 	}
 	
+	@Test
+	public void automaticClosureTime_shouldRequireExplicitOptIn() {
+		assertFalse(emrApiProperties.useCurrentTimeForAutomaticVisitClosure());
+		when(administrationService.getGlobalProperty(EmrApiConstants.GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE))
+		        .thenReturn("false");
+		assertFalse(emrApiProperties.useCurrentTimeForAutomaticVisitClosure());
+		when(administrationService.getGlobalProperty(EmrApiConstants.GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE))
+		        .thenReturn(" true ");
+		assertTrue(emrApiProperties.useCurrentTimeForAutomaticVisitClosure());
+	}
+
+	@Test
+	public void automaticClosureTime_shouldRejectInvalidConfiguration() {
+		when(administrationService.getGlobalProperty(EmrApiConstants.GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE))
+		        .thenReturn("invalid");
+		assertThrows(IllegalArgumentException.class, () -> emrApiProperties.useCurrentTimeForAutomaticVisitClosure());
+	}
+
 	@Test
 	public void getConceptSourcesForDiagnosisSearch_shouldNotReturnNull() {
 		when(administrationService.getGlobalProperty(EmrApiConstants.EMR_CONCEPT_SOURCES_FOR_DIAGNOSIS_SEARCH))

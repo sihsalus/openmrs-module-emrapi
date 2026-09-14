@@ -179,6 +179,16 @@
         <description></description>
     </globalProperty>
 
+    <globalProperty>
+        <property>emrapi.useCurrentTimeForAutomaticVisitClosure</property>
+        <defaultValue>false</defaultValue>
+        <description>
+            When true, Close Stale Visits Task records the server time at automatic administrative
+            closure instead of backdating the visit to its last encounter. Manual closure and
+            inactivity/admission eligibility rules are unchanged. Does not enable the scheduled task.
+        </description>
+    </globalProperty>
+
     <!-- privileges for conditions, see  org.openmrs.module.emrapi.conditionslist.PrivilegeConstants -->
     <privilege>
         <name>Edit conditions</name>
@@ -222,4 +232,3 @@
     </privilege>
 
 </module>
-

@@ -21,6 +21,7 @@ import org.openmrs.Visit;
 import org.openmrs.api.LocationService;
 import org.openmrs.api.ValidationException;
 import org.openmrs.api.VisitService;
+import org.openmrs.module.emrapi.EmrApiProperties;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -64,6 +65,8 @@ public class InactiveVisitClosureTransactionTest {
 
 	private ValidationException rejection;
 
+	private EmrApiProperties properties;
+
 	@BeforeEach
 	public void setUp() {
 		database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2).build();
@@ -93,6 +96,8 @@ public class InactiveVisitClosureTransactionTest {
 			return visit;
 		});
 		AdtServiceImpl target = spy(new AdtServiceImpl());
+		properties = mock(EmrApiProperties.class);
+		target.setEmrApiProperties(properties);
 		target.setVisitService(visitService);
 		target.setLocationService(mock(LocationService.class));
 		doReturn(true).when(target).shouldBeClosed(any(Visit.class));
@@ -137,6 +142,25 @@ public class InactiveVisitClosureTransactionTest {
 		service.closeInactiveVisits();
 		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_visit WHERE stopped_at=1000", Integer.class));
 		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_queue WHERE ended_at=1000", Integer.class));
+	}
+
+	@Test
+	public void shouldCloseQueuesCreatedAfterTheLastEncounterAtAdministrativeClosureTime() {
+		when(properties.useCurrentTimeForAutomaticVisitClosure()).thenReturn(true);
+		jdbc.update("UPDATE synthetic_queue SET started_at=2000");
+		long before = System.currentTimeMillis() / 1000 * 1000;
+		service.closeInactiveVisits();
+		long after = System.currentTimeMillis();
+		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_visit WHERE stopped_at BETWEEN ? AND ?",
+		    Integer.class, before, after));
+		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_queue q JOIN synthetic_visit v ON v.id=q.visit_id"
+		        + " WHERE q.ended_at=v.stopped_at AND q.ended_at>q.started_at", Integer.class));
+	}
+
+	@Test
+	public void shouldStillRollBackInvalidQueuesWhenUsingAdministrativeClosureTime() {
+		when(properties.useCurrentTimeForAutomaticVisitClosure()).thenReturn(true);
+		assertRejectedBatchRollsBack(System.currentTimeMillis() + 86400000L);
 	}
 
 	@Test
