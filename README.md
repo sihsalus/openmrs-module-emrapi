@@ -13,6 +13,10 @@ exact version already committed in `pom.xml`; it never changes source versions.
 Consumers must pin the release version and OMOD SHA-256, not a moving branch,
 `latest` URL, SNAPSHOT dependency or expiring CI artifact.
 
+Automatic administrative closure has an opt-in [timestamp policy and Queue
+integration profile](docs/automatic-visit-closure.md). The normal runtime does
+not depend on Queue; the compatibility profile is used during release validation.
+
 openmrs-module-emrapi
 ====================
 

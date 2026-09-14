@@ -14,6 +14,7 @@ MODULE = "emrapi"
 API_NAME = f"lib/emrapi-api-{VERSION}.jar"
 CLASS = "org/openmrs/module/emrapi/adt/AdtServiceImpl.class"
 MARKERS = [b"Failed to close inactive visit; rolling back closure batch: ",
+           b"useCurrentTimeForAutomaticVisitClosure", b"withMillisOfSecond",
            b"Lorg/springframework/transaction/annotation/Transactional;"]
 
 def check(condition, message):
