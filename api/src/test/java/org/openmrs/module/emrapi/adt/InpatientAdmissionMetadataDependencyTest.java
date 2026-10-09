@@ -84,7 +84,7 @@ public class InpatientAdmissionMetadataDependencyTest extends BaseModuleContextS
 
 	@Test
 	public void shouldReturnNoAdmissionsWhenEveryAdmissionIsFilteredOut() {
-		Visit visit = createVisit(testDataManager.randomPatient().save());
+		Visit visit = createVisit(testDataManager.randomPatient().birthdate("1980-01-01").save());
 		admit(visit);
 		InpatientAdmissionSearchCriteria criteria = new InpatientAdmissionSearchCriteria();
 		criteria.addCurrentInpatientLocation(testDataManager.location().name("Other ward").save());
@@ -97,7 +97,7 @@ public class InpatientAdmissionMetadataDependencyTest extends BaseModuleContextS
 		DispositionDescriptor descriptor = ContextSensitiveMetadataTestUtils.setupDispositionDescriptor(conceptService,
 		    dispositionService);
 		ContextSensitiveMetadataTestUtils.setupAdmissionDecisionConcept(conceptService, emrApiProperties);
-		Visit visit = createVisit(testDataManager.randomPatient().save());
+		Visit visit = createVisit(testDataManager.randomPatient().birthdate("1980-01-01").save());
 		admit(visit);
 		Encounter request = testDataManager.encounter().patient(visit.getPatient()).visit(visit)
 		        .encounterType(emrApiProperties.getVisitNoteEncounterType()).location(visit.getLocation())
@@ -120,7 +120,7 @@ public class InpatientAdmissionMetadataDependencyTest extends BaseModuleContextS
 
 	@Test
 	public void shouldStillRequireDispositionMetadataForAnAdmission() {
-		Visit visit = createVisit(testDataManager.randomPatient().save());
+		Visit visit = createVisit(testDataManager.randomPatient().birthdate("1980-01-01").save());
 		admit(visit);
 		InpatientAdmissionSearchCriteria criteria = new InpatientAdmissionSearchCriteria();
 		criteria.addVisitId(visit.getVisitId());
