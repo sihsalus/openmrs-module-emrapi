@@ -1089,6 +1089,10 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 			}
 		}
 		
+		if (m.isEmpty()) {
+			return new ArrayList<>();
+		}
+
 		// Retrieve InpatientRequests associated with these admissions prior to returning them
 		InpatientRequestSearchCriteria requestCriteria = new InpatientRequestSearchCriteria();
 		requestCriteria.setVisitIds(visitIds);
