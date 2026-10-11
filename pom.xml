@@ -37,6 +37,15 @@
         <module>omod</module>
     </modules>
 
+    <profiles>
+        <profile>
+            <id>queue-compatibility</id>
+            <modules>
+                <module>queue-compatibility</module>
+            </modules>
+        </profile>
+    </profiles>
+
     <properties>
         <!-- SIHSalus releases are published by GitHub Actions, never to OpenMRS Maven. -->
         <maven.deploy.skip>true</maven.deploy.skip>

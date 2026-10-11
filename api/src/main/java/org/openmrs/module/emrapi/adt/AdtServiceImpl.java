@@ -161,7 +161,13 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 		for (Visit visit : openVisits) {
 			if (shouldBeClosed(visit)) {
 				try {
-					closeAndSaveVisit(visit);
+					// Record when automatic administrative closure happens. A queue can
+					// start after the last encounter, so backdating to that encounter
+					// would make its end precede its start. Keep manual closure separate.
+					// Match DATETIME precision: a same-second queue must still fail
+					// native validation rather than persist a zero-duration closure.
+					visit.setStopDatetime(new DateTime().withMillisOfSecond(0).toDate());
+					visitService.saveVisit(visit);
 				}
 				catch (RuntimeException ex) {
 					// Save handlers may flush dirty visits and related queues before
@@ -191,7 +197,10 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 		
 		Date now = new Date();
 		Date lastActivity = getLastActivityDate(visit);
-		long hoursInactive = TimeUnit.HOURS.convert(Math.abs(lastActivity.getTime() - now.getTime()), TimeUnit.MILLISECONDS);
+		if (lastActivity.after(now)) {
+			return false;
+		}
+		long hoursInactive = TimeUnit.HOURS.convert(now.getTime() - lastActivity.getTime(), TimeUnit.MILLISECONDS);
 		
 		boolean inpatient = (visitDomainWrapper.isAdmitted() || visitDomainWrapper.isAwaitingAdmission());
 		if (!inpatient) {

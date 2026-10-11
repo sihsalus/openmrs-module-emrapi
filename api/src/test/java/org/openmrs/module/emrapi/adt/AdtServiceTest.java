@@ -613,7 +613,7 @@ public class AdtServiceTest {
 	}
 	
 	@Test
-	public void shouldCloseInactiveVisitWithLastNonVoidedEncounterDateAfterVisitExpireTime() {
+	public void shouldCloseInactiveVisitAtClosureTimeAfterLastNonVoidedEncounterExpires() {
 		Visit visit = new Visit(1);
 		visit.setStartDatetime(DateUtils.addHours(new Date(), -24));
 		
@@ -638,13 +638,11 @@ public class AdtServiceTest {
 		when(mockVisitService.getVisits(isNull(), isNull(), anyCollection(), isNull(), isNull(), isNull(), isNull(),
 		    isNull(), isNull(), eq(false), eq(false))).thenReturn(Collections.singletonList(visit));
 		
-		service.closeInactiveVisits();
-		
-		assertThat(visit.getStopDatetime(), is(expectedStopDatetime));
+		assertAutomaticClosureUsesCurrentTime(visit);
 	}
 	
 	@Test
-	public void shouldCloseInactiveVisitWithStopDateEqualToStartDateIfAllEncountersVoided() {
+	public void shouldCloseInactiveVisitAtClosureTimeIfAllEncountersVoided() {
 		Visit visit = new Visit(1);
 		visit.setStartDatetime(DateUtils.addHours(new Date(), -24));
 		
@@ -658,9 +656,7 @@ public class AdtServiceTest {
 		when(mockVisitService.getVisits(isNull(), isNull(), anyCollection(), isNull(), isNull(), isNull(), isNull(),
 		    isNull(), isNull(), eq(false), eq(false))).thenReturn(Collections.singletonList(visit));
 		
-		service.closeInactiveVisits();
-		
-		assertThat(visit.getStopDatetime(), is(visit.getStartDatetime()));
+		assertAutomaticClosureUsesCurrentTime(visit);
 	}
 	
 	@Test
@@ -682,6 +678,26 @@ public class AdtServiceTest {
 	}
 	
 	@Test
+	public void shouldNotTreatAFutureVisitStartAsInactivity() {
+		when(emrApiProperties.getVisitExpireHours()).thenReturn(0);
+		Visit visit = new Visit(1);
+		visit.setStartDatetime(DateUtils.addMinutes(new Date(), 30));
+		assertFalse(service.shouldBeClosed(visit));
+	}
+
+	@Test
+	public void shouldNotTreatAFutureEncounterAsInactivity() {
+		when(emrApiProperties.getVisitExpireHours()).thenReturn(0);
+		Visit visit = new Visit(1);
+		visit.setStartDatetime(DateUtils.addHours(new Date(), -48));
+		Encounter encounter = new Encounter();
+		encounter.setEncounterType(checkInEncounterType);
+		encounter.setEncounterDatetime(DateUtils.addMinutes(new Date(), 30));
+		visit.addEncounter(encounter);
+		assertFalse(service.shouldBeClosed(visit));
+	}
+
+	@Test
 	public void shouldCloseVisitWithAdmissionAndDischargeEncounters() {
 		Visit visit = new Visit(1);
 		visit.setStartDatetime(DateUtils.addHours(new Date(), -14));
@@ -702,9 +718,7 @@ public class AdtServiceTest {
 		when(mockVisitService.getVisits(isNull(), isNull(), anyCollection(), isNull(), isNull(), isNull(), isNull(),
 		    isNull(), isNull(), eq(false), eq(false))).thenReturn(Collections.singletonList(visit));
 		
-		service.closeInactiveVisits();
-		
-		assertThat(visit.getStopDatetime(), is(encounter2.getEncounterDatetime()));
+		assertAutomaticClosureUsesCurrentTime(visit);
 	}
 	
 	@Test
@@ -759,15 +773,48 @@ public class AdtServiceTest {
 	}
 	
 	@Test
-	public void shouldCloseInactiveVisitWithStartDateIfNoEncounters() {
+	public void shouldCloseInactiveVisitAtClosureTimeIfNoEncounters() {
 		Visit visit = new Visit(1);
 		Date startDatetime = DateUtils.addHours(new Date(), -14);
 		visit.setStartDatetime(startDatetime);
 		when(mockVisitService.getVisits(isNull(), isNull(), anyCollection(), isNull(), isNull(), isNull(), isNull(),
 		    isNull(), isNull(), eq(false), eq(false))).thenReturn(Collections.singletonList(visit));
+		assertAutomaticClosureUsesCurrentTime(visit);
+	}
+
+	private void assertAutomaticClosureUsesCurrentTime(Visit visit) {
+		Date beforeClosure = DateUtils.setMilliseconds(new Date(), 0);
 		service.closeInactiveVisits();
-		
-		assertThat(visit.getStopDatetime(), is(startDatetime));
+		Date afterClosure = new Date();
+		assertNotNull(visit.getStopDatetime());
+		assertFalse(visit.getStopDatetime().before(beforeClosure));
+		assertFalse(visit.getStopDatetime().after(afterClosure));
+		verify(mockVisitService).saveVisit(visit);
+	}
+
+	@Test
+	public void shouldPreserveManualClosureAtVisitStartWithoutEncounters() {
+		Visit visit = new Visit(1);
+		visit.setStartDatetime(DateUtils.addHours(new Date(), -14));
+		service.closeAndSaveVisit(visit);
+		assertEquals(visit.getStartDatetime(), visit.getStopDatetime());
+		verify(mockVisitService).saveVisit(visit);
+	}
+
+	@Test
+	public void shouldPreserveManualClosureAtLatestNonVoidedEncounter() {
+		Visit visit = new Visit(1);
+		visit.setStartDatetime(DateUtils.addHours(new Date(), -24));
+		Encounter encounter = new Encounter();
+		encounter.setEncounterDatetime(DateUtils.addHours(new Date(), -14));
+		visit.addEncounter(encounter);
+		Encounter voided = new Encounter();
+		voided.setEncounterDatetime(DateUtils.addHours(new Date(), -8));
+		voided.setVoided(true);
+		visit.addEncounter(voided);
+		service.closeAndSaveVisit(visit);
+		assertEquals(encounter.getEncounterDatetime(), visit.getStopDatetime());
+		verify(mockVisitService).saveVisit(visit);
 	}
 	
 	@Test
