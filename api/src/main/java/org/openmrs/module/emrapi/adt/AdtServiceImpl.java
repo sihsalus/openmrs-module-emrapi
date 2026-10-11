@@ -155,25 +155,19 @@ public class AdtServiceImpl extends BaseOpenmrsService implements AdtService {
 	@Override
 	@Transactional
 	public void closeInactiveVisits() {
-		boolean useCurrentTime = emrApiProperties.useCurrentTimeForAutomaticVisitClosure();
 		Collection<Location> possibleLocations = getPossibleLocationsToCloseVisit();
 		List<Visit> openVisits = visitService.getVisits(null, null, possibleLocations, null, null, null, null, null, null,
 		    false, false);
 		for (Visit visit : openVisits) {
 			if (shouldBeClosed(visit)) {
 				try {
-					if (useCurrentTime) {
-						// This is the time the automatic administrative closure happens,
-						// not an inferred clinical encounter or discharge time. Queue
-						// entries can begin after the last encounter; backdating the visit
-						// to that encounter would reject their associated closure.
-						// Match DATETIME precision so validation also rejects a queue
-						// created in this same second instead of persisting zero duration.
-						visit.setStopDatetime(new DateTime().withMillisOfSecond(0).toDate());
-						visitService.saveVisit(visit);
-					} else {
-						closeAndSaveVisit(visit);
-					}
+					// Record when automatic administrative closure happens. A queue can
+					// start after the last encounter, so backdating to that encounter
+					// would make its end precede its start. Keep manual closure separate.
+					// Match DATETIME precision: a same-second queue must still fail
+					// native validation rather than persist a zero-duration closure.
+					visit.setStopDatetime(new DateTime().withMillisOfSecond(0).toDate());
+					visitService.saveVisit(visit);
 				}
 				catch (RuntimeException ex) {
 					// Save handlers may flush dirty visits and related queues before

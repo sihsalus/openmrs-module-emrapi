@@ -14,14 +14,15 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
+import org.joda.time.DateTimeUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.openmrs.Encounter;
 import org.openmrs.Visit;
 import org.openmrs.api.LocationService;
 import org.openmrs.api.ValidationException;
 import org.openmrs.api.VisitService;
-import org.openmrs.module.emrapi.EmrApiProperties;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -53,6 +54,8 @@ import static org.mockito.Mockito.when;
  */
 public class InactiveVisitClosureTransactionTest {
 
+	private static final long CLOSURE_TIME = 1000000L;
+
 	private EmbeddedDatabase database;
 
 	private JdbcTemplate jdbc;
@@ -65,10 +68,9 @@ public class InactiveVisitClosureTransactionTest {
 
 	private ValidationException rejection;
 
-	private EmrApiProperties properties;
-
 	@BeforeEach
 	public void setUp() {
+		DateTimeUtils.setCurrentMillisFixed(CLOSURE_TIME);
 		database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2).build();
 		jdbc = new JdbcTemplate(database);
 		jdbc.execute("CREATE TABLE synthetic_visit (id INT PRIMARY KEY, stopped_at BIGINT)");
@@ -96,8 +98,6 @@ public class InactiveVisitClosureTransactionTest {
 			return visit;
 		});
 		AdtServiceImpl target = spy(new AdtServiceImpl());
-		properties = mock(EmrApiProperties.class);
-		target.setEmrApiProperties(properties);
 		target.setVisitService(visitService);
 		target.setLocationService(mock(LocationService.class));
 		doReturn(true).when(target).shouldBeClosed(any(Visit.class));
@@ -111,19 +111,46 @@ public class InactiveVisitClosureTransactionTest {
 
 	@AfterEach
 	public void tearDown() {
+		DateTimeUtils.setCurrentMillisSystem();
 		if (database != null) {
 			database.shutdown();
 		}
 	}
 
 	@Test
+	public void shouldCloseQueuesStartedAtVisitStartWhenThereAreNoEncounters() {
+		jdbc.update("UPDATE synthetic_queue SET started_at=1000");
+		assertAutomaticClosureAndQueueEndsUseCurrentTime();
+		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_queue WHERE started_at=1000", Integer.class));
+	}
+
+	@Test
+	public void shouldCloseAQueueStartedAfterTheLastEncounter() {
+		Encounter encounter = new Encounter();
+		encounter.setEncounterDatetime(new Date(2000L));
+		visits.get(1).addEncounter(encounter);
+		jdbc.update("UPDATE synthetic_queue SET started_at=3000 WHERE visit_id=2");
+		assertAutomaticClosureAndQueueEndsUseCurrentTime();
+		assertEquals(3000L, jdbc.queryForObject("SELECT started_at FROM synthetic_queue WHERE visit_id=2", Long.class));
+	}
+
+	private void assertAutomaticClosureAndQueueEndsUseCurrentTime() {
+		service.closeInactiveVisits();
+		assertEquals(3, jdbc.queryForObject(
+		    "SELECT COUNT(*) FROM synthetic_visit WHERE stopped_at = ?", Integer.class, CLOSURE_TIME));
+		assertEquals(3, jdbc.queryForObject(
+		    "SELECT COUNT(*) FROM synthetic_visit v JOIN synthetic_queue q ON q.visit_id=v.id WHERE q.ended_at=v.stopped_at",
+		    Integer.class));
+	}
+
+	@Test
 	public void shouldRollBackTheBatchWhenAQueueWouldEndBeforeItsStart() {
-		assertRejectedBatchRollsBack(2000L);
+		assertRejectedBatchRollsBack(CLOSURE_TIME + 1000L);
 	}
 
 	@Test
 	public void shouldRollBackTheBatchWhenAQueueWouldEndAtItsStart() {
-		assertRejectedBatchRollsBack(1000L);
+		assertRejectedBatchRollsBack(CLOSURE_TIME);
 	}
 
 	private void assertRejectedBatchRollsBack(long queueStart) {
@@ -138,29 +165,8 @@ public class InactiveVisitClosureTransactionTest {
 	}
 
 	@Test
-	public void shouldCommitAValidBatchWithoutChangingTheExistingStopDatePolicy() {
-		service.closeInactiveVisits();
-		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_visit WHERE stopped_at=1000", Integer.class));
-		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_queue WHERE ended_at=1000", Integer.class));
-	}
-
-	@Test
-	public void shouldCloseQueuesCreatedAfterTheLastEncounterAtAdministrativeClosureTime() {
-		when(properties.useCurrentTimeForAutomaticVisitClosure()).thenReturn(true);
-		jdbc.update("UPDATE synthetic_queue SET started_at=2000");
-		long before = System.currentTimeMillis() / 1000 * 1000;
-		service.closeInactiveVisits();
-		long after = System.currentTimeMillis();
-		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_visit WHERE stopped_at BETWEEN ? AND ?",
-		    Integer.class, before, after));
-		assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM synthetic_queue q JOIN synthetic_visit v ON v.id=q.visit_id"
-		        + " WHERE q.ended_at=v.stopped_at AND q.ended_at>q.started_at", Integer.class));
-	}
-
-	@Test
-	public void shouldStillRollBackInvalidQueuesWhenUsingAdministrativeClosureTime() {
-		when(properties.useCurrentTimeForAutomaticVisitClosure()).thenReturn(true);
-		assertRejectedBatchRollsBack(System.currentTimeMillis() + 86400000L);
+	public void shouldCommitAValidBatchAtAdministrativeClosureTime() {
+		assertAutomaticClosureAndQueueEndsUseCurrentTime();
 	}
 
 	@Test

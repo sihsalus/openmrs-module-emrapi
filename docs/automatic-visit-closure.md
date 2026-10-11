@@ -1,59 +1,65 @@
 # Automatic administrative visit closure
 
-`Close Stale Visits Task` calls `AdtService.closeInactiveVisits()` every configured
-scheduler interval. A closed visit causes Queue's native save handler to end its
-active entries. This requires neither a host cron job nor an external script.
+This is an unreleased correction under review. Keep automatic closure paused;
+this PR does not change tasks, inactivity thresholds or deployment configuration.
+The published `3.5.1-sihsalus.2` release still contains the previous timestamp
+policy described in [the release notes](../SIHSALUS-RELEASE.md).
 
 ## Timestamp policy
 
-The legacy policy uses the last non-voided encounter time, or the visit start
-when there are no encounters. An outpatient queue may start after that time.
-Queue correctly rejects closing such an entry before or at its start. The
-transaction protection in `3.5.1-sihsalus.1` rolls back the entire batch but does
-not make that timestamp compatible.
+`CloseStaleVisitsTask` calls `AdtService.closeInactiveVisits()`. Previously that
+method backdated the visit stop to its latest non-voided encounter, or its start
+when no encounter remained. A queue entry can start later, so Queue correctly
+rejects the resulting end before or at the entry's start. The existing
+transaction protection rolls back the batch but cannot make that timestamp valid.
 
-`3.5.1-sihsalus.2` adds the opt-in global property
-`emrapi.useCurrentTimeForAutomaticVisitClosure`:
+The correction records the server time of automatic administrative closure,
+truncated to the database's second precision. It records when the operation
+happened, without asserting a clinical discharge. Queue's existing save handler
+uses that visit stop time to end its open entries. No opt-in property, replacement
+scheduler or external repair script is introduced.
 
-| Value | Automatic visit stop time |
-| --- | --- |
-| absent, blank or `false` (default) | Existing last-encounter/start policy |
-| `true` | Server time when the automatic closure executes, truncated to seconds |
-| any other value | Fail before modifying visits |
+Manual `closeAndSaveVisit` keeps its existing timestamp and validation policy.
+Encounter dates, queue starts, dispositions and already-ended historical entries
+are not rewritten. A future or same-second queue start still fails validation and
+rolls back the whole batch; the task does not fabricate a future stop time.
 
-The new timestamp records an administrative closure. It does not assert a
-clinical discharge or alter encounter times, queue start times, dispositions,
-statuses or already-ended historical queue entries. Manual `closeAndSaveVisit`
-retains its existing policy. Installing the module does not start any task.
+## Eligibility and the meaning of 24 hours
 
-## Eligibility and validation
+- `emrapi.visitExpireHours` controls outpatient inactivity; its native default
+  is **12 hours**, not 24. This PR does not change that value.
+- Activity is the later of the visit start and its non-voided encounter dates.
+  Editing an observation or changing queue status does not restart that clock.
+- A future activity timestamp is not elapsed inactivity.
+- Visits are selected from locations tagged `Visit Location`.
+- Admissions, pending admissions and dispositions that keep a visit open retain
+  protection when `emrapi.inpatientVisitExpireHours` is absent.
+- The scheduler interval determines how often the task checks eligibility. An
+  interval of 86,400 seconds is not a 24-hour inactivity rule.
 
-- `emrapi.visitExpireHours` still controls the number of inactive hours. The
-  hospital's existing value is 24; the module's upstream default remains 12.
-- Activity means the latest non-voided encounter datetime or visit start time.
-  Editing observations or changing a queue status does not restart that clock.
-- Visits are limited to locations tagged `Visit Location`.
-- Admissions, pending admission and dispositions that keep a visit open retain
-  their existing protection when `emrapi.inpatientVisitExpireHours` is unset.
-- Future activity is never treated as elapsed inactivity.
-- Queue and visit validators remain enabled. Invalid data still rolls back the
-  complete batch. A future/same-second queue start is not silently rewritten.
-- The change does not repair historical records or provide concurrency locking
-  against a clinician adding activity while the task is evaluating a visit.
+Core's `org.openmrs.scheduler.tasks.AutoCloseVisitsTask` is a different task:
+it uses `visits.autoCloseVisitType` and must not be substituted for EMR API's
+inactivity calculation. The QLTY read-only review on 2026-10-11 found the Core
+task paused (`started=false`, `startOnStartup=false`, interval 86,400 seconds),
+its visit-type property empty, and the EMR API task and both inactivity
+properties absent. The review made no scheduler or property changes.
 
 ## Verification
 
-The normal reactor covers eligibility, manual closure, explicit configuration,
-future activity, and rollback after a partial batch flush. The
-`queue-compatibility` Maven profile adds actual OpenMRS services, Hibernate/H2,
-Queue validators and the visit save handler. It reproduces the legacy failure
-and verifies the new stop time, historical entry preservation, active-entry
-filtering, recent-visit protection and repeated execution.
+Unit regressions cover the administrative timestamp, encounter selection,
+unchanged manual closure, future activity and recent visits. Spring/H2 transaction
+tests write visit and queue rows before rejecting a timestamp, then verify that
+earlier writes in the same batch roll back and later visits are not processed.
 
-The workflow builds Queue's pinned source
+The `queue-compatibility` Maven profile uses real OpenMRS services, Queue save
+handlers and validators with Hibernate/H2. It verifies persisted visit and queue
+end times, preservation of historical entries, recent visits, repeated execution,
+manual validation and rejection of a future queue start.
+
+CI builds the pinned Queue source
 `openmrs/openmrs-module-queue@fb6de2acbf31b4dd50e518f74badf28163d6e67d`
-as `queue-api:3.1.0-sihsalus.1` for test dependency resolution. This is a test-only
-dependency and is not packaged inside EMR API. Then run:
+as `queue-api:3.1.0-sihsalus.1` for test dependency resolution. Queue is test-only
+and is not packaged in EMR API. Run the reactor on Java 21 with both Core baselines:
 
 ```sh
 mvn -B -ntp -Dformatter.skip=true -Dspotless.skip=true -Dmaven.javadoc.skip=true \
@@ -61,19 +67,18 @@ mvn -B -ntp -Dformatter.skip=true -Dspotless.skip=true -Dmaven.javadoc.skip=true
 python3 tools/verify_omod.py omod/target/emrapi-3.5.1-sihsalus.2.omod
 ```
 
-## Activation
+Repeat with `-DopenmrsPlatformVersion=2.8.0`. The development build retains the
+current POM version; it must not replace the existing immutable release assets.
+A separately reviewed release needs a new version.
 
-Before activation, confirm the administrative timestamp policy and whether the
-intended operation closes visits as well as queues. Complete synthetic QLTY
-acceptance with the exact release, and take a current hospital backup. Review
-queue/visit timestamp consistency and activity using aggregate diagnostics.
+## Remaining acceptance
 
-Use the existing OpenMRS task and global-property administration interfaces.
-Set the new property to `true`, retain the approved inactivity threshold, and
-schedule only `org.openmrs.module.emrapi.adt.CloseStaleVisitsTask`. Persist
-`startOnStartup=true` and retain the existing 3600-second interval. Verify its
-in-memory scheduled state, a completed execution, and active queue counts.
+Keep the task paused. Runtime acceptance in DEV and QLTY is still required with
+the exact future release and synthetic visits/queues before any separately
+authorized activation. Agree on the outpatient threshold and what activity means
+with the responsible team; this PR does not approve a 24-hour clinical policy.
 
-If a batch fails, stop that task and investigate its validation error. Do not
-disable validators or alter original timestamps to make the batch pass. Rolling
-back code also requires pausing the task before removing the opt-in property.
+The batch remains atomic: one incompatible visit aborts all its changes. The
+correction does not add concurrency locking against a clinician adding activity
+while the task evaluates a visit. Do not disable validators or change original
+timestamps to make a batch pass.

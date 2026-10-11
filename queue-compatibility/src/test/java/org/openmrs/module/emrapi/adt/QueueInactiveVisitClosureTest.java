@@ -65,8 +65,6 @@ public class QueueInactiveVisitClosureTest extends BaseModuleContextSensitiveTes
 		referenceTime = DateUtils.setMilliseconds(new Date(), 0);
 		Context.getAdministrationService().setGlobalProperty(EmrApiConstants.GP_VISIT_EXPIRE_HOURS, "24");
 		Context.getAdministrationService().setGlobalProperty(EmrApiConstants.GP_INPATIENT_VISIT_EXPIRE_HOURS, "");
-		Context.getAdministrationService().setGlobalProperty(
-		    EmrApiConstants.GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE, "true");
 		LocationTag tag = Context.getLocationService().getLocationTagByName(EmrApiConstants.LOCATION_TAG_SUPPORTS_VISITS);
 		if (tag == null) {
 			tag = Context.getLocationService().saveLocationTag(new LocationTag(
@@ -123,10 +121,16 @@ public class QueueInactiveVisitClosureTest extends BaseModuleContextSensitiveTes
 	}
 
 	@Test
-	public void shouldReproduceTheLegacyFailureWithAQueueStartingAfterTheLastActivity() {
-		Context.getAdministrationService().setGlobalProperty(
-		    EmrApiConstants.GP_USE_CURRENT_TIME_FOR_AUTOMATIC_VISIT_CLOSURE, "false");
-		entry(visit(-48), queue(), -47, null);
+	public void shouldKeepManualClosureValidationForAQueueStartingAfterTheLastActivity() {
+		Visit stale = visit(-48);
+		entry(stale, queue(), -47, null);
+		Context.flushSession();
+		assertThrows(ValidationException.class, () -> adtService.closeAndSaveVisit(stale));
+	}
+
+	@Test
+	public void shouldRejectAutomaticClosureBeforeAFutureQueueStart() {
+		entry(visit(-48), queue(), 1, null);
 		Context.flushSession();
 		assertThrows(ValidationException.class, () -> adtService.closeInactiveVisits());
 	}
